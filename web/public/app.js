@@ -14,6 +14,10 @@ const state = {
   // Legacy pick pools only: gameId -> { selected_team, confidence_rank }
   draft: new Map(),
   tiebreaker: '',
+  // Which board sub-slate is showing: { key, id }. The key is pool+league+week,
+  // so moving to another week re-picks the default instead of inheriting a
+  // choice made about a different slate.
+  slate: { key: null, id: 'upcoming' },
   // Visible slice of the week selector: { key, start }. Re-centres on the open
   // week whenever `key` changes; the arrows move `start` on their own.
   weekNav: { key: null, start: 0 },
@@ -893,6 +897,67 @@ function betChip(bet) {
     </span>`;
 }
 
+/* ----------------------------------------------------------- board slates */
+
+// A week's board runs past a dozen games once a college slate is in, and the
+// ones still open for betting sit interleaved with finals. These three
+// sub-tabs keep what a member can actually bet on at the top of the card
+// instead of somewhere down the scroll.
+const SLATES = [
+  { id: 'upcoming', label: 'Upcoming', empty: 'Every game this week has kicked off.' },
+  { id: 'live', label: 'In Progress', empty: 'No games are under way right now.' },
+  { id: 'done', label: 'Completed', empty: 'No games have finished this week yet.' },
+];
+
+// `locked` is "kickoff has passed", which runs ahead of the feed: a game stops
+// being bettable the moment it starts, minutes before an ingest flips its
+// status to IN_PROGRESS. So the clock decides what has left Upcoming, and the
+// status decides what has reached Completed — a game between the two is live.
+function gameSlate(game) {
+  if (game.status === 'FINAL' || game.status === 'VOID') return 'done';
+  if (game.status === 'IN_PROGRESS' || game.locked) return 'live';
+  return 'upcoming';
+}
+
+function groupSlates(games) {
+  const groups = { upcoming: [], live: [], done: [] };
+  games.forEach((game) => groups[gameSlate(game)].push(game));
+  return groups;
+}
+
+// Opens on the first slate that has games, so a finished week shows its
+// results rather than an empty Upcoming. Once a member picks a slate it sticks
+// — including when it empties out under them — until the week, league or pool
+// changes.
+function resolveSlate(groups, key) {
+  if (state.slate.key !== key) {
+    state.slate = {
+      key,
+      id: SLATES.find((slate) => groups[slate.id].length > 0)?.id ?? 'upcoming',
+    };
+  }
+  return state.slate.id;
+}
+
+function slateTabs(groups, active) {
+  return `
+    <div class="slate-tabs" role="tablist">
+      ${SLATES.map((slate) => `
+        <button role="tab" data-slate="${slate.id}"
+                aria-selected="${slate.id === active}">
+          ${slate.label}
+          <span class="slate-count">${groups[slate.id].length}</span>
+        </button>`).join('')}
+    </div>`;
+}
+
+function boardSlate(groups, active, board) {
+  const games = groups[active];
+  return slateTabs(groups, active) + (games.length > 0
+    ? games.map((game) => boardGame(game, board)).join('')
+    : `<p class="muted">${SLATES.find((slate) => slate.id === active).empty}</p>`);
+}
+
 function boardGame(game, board) {
   const scored = game.home_score !== null && game.home_score !== undefined;
   const slipHere = state.slip?.gameId === game.id;
@@ -1379,6 +1444,7 @@ async function renderSharksPool(detail, week) {
   ]);
 
   const { balance, pool } = board;
+  const slateKey = `${poolId}:${league}:${week}`;
   const canRebuy = balance.is_bust && pool.bust_policy === 'REBUY'
     && balance.rebuys_used < (pool.rebuy_limit ?? 0);
 
@@ -1387,13 +1453,24 @@ async function renderSharksPool(detail, week) {
     // explanation instead of a slate, and there is nothing to paint.
     const host = app.querySelector('#board');
     if (!host) return;
-    host.innerHTML = board.games
-      .map((game) => boardGame(game, board)).join('');
+    const groups = groupSlates(board.games);
+    host.innerHTML = boardSlate(groups, resolveSlate(groups, slateKey), board);
     wireBoard();
     app.querySelector('#slip-stake')?.focus();
   };
 
   function wireBoard() {
+    app.querySelectorAll('[data-slate]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.slate = { key: slateKey, id: btn.dataset.slate };
+        // The open slip hangs off a game that the new slate may not list, and
+        // a half-typed stake on a game you can no longer see is a trap.
+        state.slip = null;
+        state.slipStake = '';
+        paintBoard();
+      });
+    });
+
     app.querySelectorAll('[data-bet]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const [gameId, market, selection] = btn.dataset.bet.split('|');

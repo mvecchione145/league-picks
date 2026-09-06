@@ -1,12 +1,15 @@
 # Amazon Linux 2023, arm64, resolved from the public SSM parameter rather than
 # pinned: a hardcoded AMI id is region-specific and goes stale. Graviton is the
 # cheaper family and every image the stack uses publishes arm64.
-data "aws_ssm_parameter" "al2023" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64"
+data "aws_ami" "al2023" {
+   filter {
+    name   = "name"
+    values = ["al2023-ami-2023.12.20260803.3-kernel-6.1-arm64"]
+  }
 }
 
 resource "aws_instance" "app" {
-  ami                    = data.aws_ssm_parameter.al2023.value
+  ami                    = data.aws_ami.al2023.id
   instance_type          = var.instance_type
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.app.id]
@@ -36,6 +39,12 @@ resource "aws_instance" "app" {
   }
 
   tags = { Name = var.name }
+}
+
+# Where the box answers. Named once because the outputs and the DNS record all
+# want it and must not drift apart.
+locals {
+  public_ip = var.allocate_eip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip
 }
 
 # Without this the public address changes on every stop/start, breaking DNS and
