@@ -5,12 +5,17 @@ output "instance_id" {
 
 output "public_ip" {
   description = "Public address. The Elastic IP when one is allocated, otherwise the ephemeral one."
-  value       = var.allocate_eip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip
+  value       = local.public_ip
 }
 
 output "app_url" {
-  description = "The app, once the stack is running on the box."
-  value       = "http://${var.allocate_eip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip}"
+  description = "The app by address, which works before DNS has propagated."
+  value       = "http://${local.public_ip}"
+}
+
+output "app_domain_url" {
+  description = "The app by name. Null when domain_name is unset. Plain HTTP — nothing here issues a certificate yet."
+  value       = var.domain_name == null ? null : "http://${var.domain_name}"
 }
 
 output "ssm_session" {

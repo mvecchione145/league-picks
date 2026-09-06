@@ -24,8 +24,38 @@ the compose plugin installed and an empty `/opt/leaguepicks`; follow
 | IAM role + instance profile | `AmazonSSMManagedInstanceCore`, which is what makes Session Manager work. |
 | EC2 instance | Amazon Linux 2023 arm64 on `t4g.small`, 20 GB encrypted gp3, IMDSv2 required. |
 | Elastic IP | Optional (`allocate_eip`, default true). |
+| Route 53 A record | `leaguepicks.mvecc.dev` → the Elastic IP, in the **existing** `mvecc.dev` zone. Optional (`domain_name`). |
 
 Roughly **$17/month** — see the cost table in `docs/deploy-ec2.md`.
+
+## DNS
+
+`domain_name` (default `leaguepicks.mvecc.dev`) gets an A record pointing at
+the Elastic IP, with a 300-second TTL:
+
+```bash
+terraform output -raw app_domain_url
+dig +short leaguepicks.mvecc.dev
+```
+
+The hosted zone is **looked up, not created**. `mvecc.dev` must already exist
+as a public zone in this account, or the plan fails on the data source — that
+is deliberate. Terraform creating the zone would mint a second one with
+different nameservers, resolving nothing until the registrar is repointed, and
+`terraform destroy` would then delete every unrelated record in it.
+
+`allow_overwrite` is left at its default, so an existing
+`leaguepicks.mvecc.dev` record is an error rather than something this stack
+silently takes over. Delete it, or `terraform import` it, if this stack should
+own it.
+
+Set `domain_name = null` to manage DNS somewhere else and create no record.
+The record requires `allocate_eip` — pointing a name at an address that
+changes on the next stop/start is the breakage the Elastic IP exists to
+prevent, so that combination fails the plan rather than half-working.
+
+The app still answers on plain HTTP; nothing here issues a certificate. The
+record is the prerequisite for one, not the whole of it.
 
 ## Getting a shell
 
@@ -69,6 +99,8 @@ holds a private key. Set `ssh_cidrs = ["1.2.3.4/32"]` if you specifically need
 | `http_cidrs` | `["0.0.0.0/0"]` | Narrow it while testing if you like. |
 | `ssh_cidrs` | `[]` | Leave empty; use SSM. |
 | `allocate_eip` | `true` | Off means the address changes on stop/start, breaking DNS and any issued certificate. |
+| `hosted_zone_name` | `mvecc.dev` | Must already exist as a public zone in the account. |
+| `domain_name` | `leaguepicks.mvecc.dev` | `null` to create no record. |
 
 ## State
 

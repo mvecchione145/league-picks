@@ -38,6 +38,12 @@ resource "aws_instance" "app" {
   tags = { Name = var.name }
 }
 
+# Where the box answers. Named once because the outputs and the DNS record all
+# want it and must not drift apart.
+locals {
+  public_ip = var.allocate_eip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip
+}
+
 # Without this the public address changes on every stop/start, breaking DNS and
 # invalidating an issued certificate. AWS charges for a public IPv4 either way.
 resource "aws_eip" "app" {

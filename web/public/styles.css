@@ -253,6 +253,33 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px
   background: var(--accent-soft);
 }
 
+/* Upcoming / In Progress / Completed within one week's board. Sits under the
+   week strip and reads as a filter over the list below it, not as another
+   panel switch — hence the count beside each label. */
+.slate-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+.slate-tabs button {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.slate-tabs button[aria-selected="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.slate-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+.slate-tabs button[aria-selected="true"] .slate-count { color: var(--accent); }
+
 /* History filter bar. Wraps rather than scrolls: on a phone these become a
    stacked column, which is easier to use than a horizontal scroller. */
 .filters {
@@ -483,6 +510,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   /* Four tabs (five with Manage) have to share one row on a phone. */
   .tabs { gap: 4px; }
   .tabs button { padding: 8px 4px; font-size: 13px; min-width: 0; }
+
+  /* Three labels plus counts; shrink them rather than let the row wrap. */
+  .slate-tabs { gap: 4px; }
+  .slate-tabs button { padding: 8px 4px; font-size: 13px; gap: 4px; }
 
   /* The week strip is five wide; let the buttons shrink rather than wrap. */
   .week-nav { flex-wrap: nowrap; gap: 4px; }

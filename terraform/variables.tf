@@ -70,3 +70,24 @@ variable "allocate_eip" {
   type        = bool
   default     = true
 }
+
+variable "hosted_zone_name" {
+  description = <<-EOT
+    Public Route 53 hosted zone that domain_name lives in. Must already exist
+    in this account — the zone is looked up rather than created, because its
+    nameservers are the ones the registrar points at and it holds records for
+    other things.
+  EOT
+  type        = string
+  default     = "mvecc.dev"
+}
+
+variable "domain_name" {
+  description = <<-EOT
+    Fully qualified name to point at the instance, as an A record in
+    hosted_zone_name. Set to null to manage DNS elsewhere and create no record.
+    Requires allocate_eip.
+  EOT
+  type        = string
+  default     = "leaguepicks.mvecc.dev"
+}

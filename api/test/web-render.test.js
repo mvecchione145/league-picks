@@ -38,20 +38,25 @@ function extractFunction(name) {
 
 // Some builders lean on a module-scope constant (the abbreviation map, say),
 // which the function extractor above does not pull. Grabs `const NAME = ...;`
-// by brace matching the same way.
+// by matching whichever bracket opens it — an array of objects has to run to
+// the closing `]`, not to the first `}` inside it.
 function extractConst(name) {
   const start = SOURCE.indexOf(`const ${name} = `);
   assert.notEqual(start, -1, `${name} not found in app.js`);
 
+  const open = ['{', '['].map((c) => SOURCE.indexOf(c, start))
+    .filter((i) => i !== -1).sort((a, b) => a - b)[0];
+  const close = { '{': '}', '[': ']' }[SOURCE[open]];
+
   let depth = 0;
-  for (let i = SOURCE.indexOf('{', start); i < SOURCE.length; i += 1) {
-    if (SOURCE[i] === '{') depth += 1;
-    else if (SOURCE[i] === '}') {
+  for (let i = open; i < SOURCE.length; i += 1) {
+    if (SOURCE[i] === SOURCE[open]) depth += 1;
+    else if (SOURCE[i] === close) {
       depth -= 1;
       if (depth === 0) return `${SOURCE.slice(start, i + 1)};`;
     }
   }
-  throw new Error(`unbalanced braces in ${name}`);
+  throw new Error(`unbalanced brackets in ${name}`);
 }
 
 // The handful of helpers the builders call. Stand-ins, not the real ones —
@@ -284,6 +289,60 @@ test('a week that does not exist is normalised to null, not "undefined"', () => 
   assert.equal(resolve(null, loaded), 3, 'falls back to the current week');
   assert.equal(resolve(7, loaded), 7, 'an explicit week wins');
   assert.equal(resolve(null, { current_week: null, weeks: [{ week: 5 }] }), 5);
+});
+
+/* ----------------------------------------------------------- board slates */
+
+// The board splits a week into Upcoming / In Progress / Completed so the games
+// still open for betting are not buried under finals. What lands where is the
+// whole of that feature's logic, and it turns on two fields that disagree with
+// each other for a few minutes around every kickoff.
+const slateFns = () => new Function(`
+  ${extractConst('SLATES')}
+  ${extractFunction('gameSlate')}
+  ${extractFunction('groupSlates')}
+  return { SLATES, gameSlate, groupSlates };
+`)();
+
+test('a game lands in the slate its status and kickoff put it in', () => {
+  const { gameSlate } = slateFns();
+  assert.equal(gameSlate({ status: 'SCHEDULED', locked: false }), 'upcoming');
+  assert.equal(gameSlate({ status: 'IN_PROGRESS', locked: true }), 'live');
+  assert.equal(gameSlate({ status: 'FINAL', locked: true }), 'done');
+  assert.equal(gameSlate({ status: 'VOID', locked: true }), 'done');
+
+  // The gap this exists for: kickoff has passed but the ingest has not yet
+  // flipped the status. Betting is already closed, so it must not sit in
+  // Upcoming beside games that can still be bet.
+  assert.equal(gameSlate({ status: 'SCHEDULED', locked: true }), 'live');
+});
+
+test('grouping keeps every game and the feed\'s kickoff order', () => {
+  const { groupSlates } = slateFns();
+  const games = [
+    { id: 'a', status: 'FINAL', locked: true },
+    { id: 'b', status: 'SCHEDULED', locked: false },
+    { id: 'c', status: 'IN_PROGRESS', locked: true },
+    { id: 'd', status: 'SCHEDULED', locked: false },
+  ];
+  const groups = groupSlates(games);
+  assert.deepEqual(groups.upcoming.map((g) => g.id), ['b', 'd']);
+  assert.deepEqual(groups.live.map((g) => g.id), ['c']);
+  assert.deepEqual(groups.done.map((g) => g.id), ['a']);
+
+  // An empty week still yields all three keys — the tab counts read them
+  // unconditionally, and a missing one would render "undefined".
+  assert.deepEqual(groupSlates([]), { upcoming: [], live: [], done: [] });
+});
+
+// The default slate is "the first one with games in it", which is why the
+// order of SLATES is load-bearing rather than cosmetic: a week that has not
+// started opens on Upcoming, and one that is over opens on Completed.
+test('the slates stay in kickoff order, each with an empty message', () => {
+  const { SLATES } = slateFns();
+  assert.deepEqual(SLATES.map((s) => s.id), ['upcoming', 'live', 'done']);
+  assert.deepEqual(SLATES.map((s) => s.label), ['Upcoming', 'In Progress', 'Completed']);
+  SLATES.forEach((slate) => assert.ok(slate.empty, `${slate.id} has no empty message`));
 });
 
 // The query string must omit the parameter rather than send a placeholder.
