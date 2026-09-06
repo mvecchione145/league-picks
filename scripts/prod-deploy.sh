@@ -44,7 +44,7 @@ No .env in this directory. The overlay requires these three and refuses to
 start without them, rather than falling back to development defaults:
 
   cat > .env <<VARS
-  SITE_ADDRESS=:80          # or the domain, once DNS points here
+  SITE_DOMAIN=leaguepicks.mvecc.dev   # bare name, no scheme
   JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n')
   POSTGRES_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=\n')
   VARS
@@ -54,7 +54,7 @@ EOF
 fi
 
 MISSING=()
-for var in SITE_ADDRESS JWT_SECRET POSTGRES_PASSWORD; do
+for var in SITE_DOMAIN JWT_SECRET POSTGRES_PASSWORD; do
   grep -qE "^${var}=.+" .env || MISSING+=("$var")
 done
 if [ ${#MISSING[@]} -gt 0 ]; then

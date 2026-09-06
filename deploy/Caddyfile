@@ -1,13 +1,41 @@
 # Caddy sits in front of the nginx container and terminates TLS.
 #
-# SITE_ADDRESS comes from the environment (see docker-compose.prod.yml):
-#   app.example.com  → automatic Let's Encrypt certificate, HTTP redirected
-#   :80              → plain HTTP, for testing against a raw IP before DNS
+# Two site blocks, so the app answers on both ports:
+#
+#   443  https://$SITE_DOMAIN, with an automatically-issued Let's Encrypt
+#        certificate. This is the only way a browser will reach a .dev name —
+#        the whole TLD ships in the HSTS preload list, so Chrome, Firefox and
+#        Safari rewrite http:// to https:// before a request ever leaves the
+#        machine. A deployment serving only port 80 is unreachable by name no
+#        matter how correct its DNS is.
+#
+#   80   the same app, unencrypted, for every host. That covers the raw IP
+#        before DNS exists or while it propagates, health checks, and anything
+#        speaking plain HTTP. Caddy answers the ACME HTTP-01 challenge here
+#        itself, ahead of this site.
+#
+# Because port 80 serves the app rather than redirecting to HTTPS, a client
+# that ignores the preload list can reach it in cleartext. No browser will, and
+# the app carries its session in localStorage rather than a cookie, so there is
+# no credential riding on the plaintext request. See the global block below for
+# how to trade this back for a redirect.
 #
 # nginx still owns /api proxying and the SPA fallback, so this file stays a
 # thin edge: TLS, compression, and a few headers.
 
-{$SITE_ADDRESS} {
+{
+	# Certificates stay automatic; only the redirects go. By default Caddy
+	# injects a 308 to HTTPS on port 80 for every hostname it manages, and that
+	# injection happens at run time — it is not in the adapted JSON — so it
+	# silently shadows the http:// site below for the domain and port 80 ends
+	# up serving nothing but redirects.
+	#
+	# Delete this block to get the conventional redirect back. Doing so costs
+	# nothing in a browser, which will not use port 80 for a .dev name anyway.
+	auto_https disable_redirects
+}
+
+(app) {
 	encode zstd gzip
 
 	# The app container is `web` on the compose network. Not published to the
@@ -27,8 +55,6 @@
 		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
-		# Only meaningful over HTTPS; harmless on the :80 testing path.
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		-Server
 	}
 
@@ -36,4 +62,16 @@
 		output stdout
 		format console
 	}
+}
+
+https://{$SITE_DOMAIN} {
+	import app
+
+	# Only meaningful over HTTPS, and a browser ignores it on a plain-HTTP
+	# response — hence here rather than in the shared snippet.
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+}
+
+http:// {
+	import app
 }
