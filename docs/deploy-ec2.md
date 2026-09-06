@@ -144,7 +144,7 @@ Create `.env` — compose reads it automatically from the project directory:
 cat > .env <<EOF
 POSTGRES_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')
 JWT_SECRET=$(openssl rand -base64 48)
-SITE_ADDRESS=picks.example.com
+SITE_DOMAIN=leaguepicks.mvecc.dev
 SHARP_API_KEY=<your sharpapi.io key>
 EOF
 chmod 600 .env
@@ -156,9 +156,23 @@ the key in `.env` and call `docker compose` directly with both files. (The
 alternative, if you would rather not keep a key on disk, is SSM Parameter Store
 fetched into the environment at boot.)
 
-Set `SITE_ADDRESS` to `:80` while testing against a raw IP — ACME cannot issue a
-certificate for an IP address. Switch it to the domain once DNS resolves, and
-Caddy will get a certificate on the next restart.
+`SITE_DOMAIN` is the bare public name — no scheme, no port. Caddy serves it on
+443 with an automatically-issued certificate, and serves the same app on 80 for
+every host, which is how you reach it by raw IP before DNS exists. Set it even
+if DNS has not propagated yet: ACME retries in the background and port 80 works
+the whole time.
+
+Port 80 serves the app rather than redirecting to HTTPS — `auto_https
+disable_redirects` in `deploy/Caddyfile` turns off the 308 Caddy would
+otherwise inject. Delete that global block to get the conventional redirect
+back.
+
+**A `.dev` domain must be served over HTTPS.** Google operates the TLD and had
+the whole of it added to the browsers' HSTS preload list, so Chrome, Firefox
+and Safari rewrite `http://` to `https://` before any request leaves the
+machine. A deployment listening only on port 80 is unreachable by name however
+correct its DNS is — `curl http://…` will happily return 200 while every
+browser reports a connection failure.
 
 ### 4. Start
 

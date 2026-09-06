@@ -81,10 +81,12 @@ services:
     depends_on:
       - web
     environment:
-      # A bare domain gets an automatic Let's Encrypt certificate. Use ":80"
-      # while you are still testing against a raw IP — ACME cannot issue a
-      # certificate for an IP address.
-      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env (domain, or :80)}
+      # The bare public name, e.g. leaguepicks.mvecc.dev — no scheme, no port.
+      # Caddy gets a Let's Encrypt certificate for it and serves :443, and
+      # serves the app on :80 for every host besides. Setting this before DNS
+      # resolves is fine: issuance retries in the background and :80 works
+      # throughout.
+      SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN in .env (bare domain, no scheme)}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
